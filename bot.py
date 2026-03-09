@@ -110,6 +110,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"오류: {str(e)}")
 
 async def post_init(app):
+    await app.bot.send_message(chat_id=OWNER_ID, text="봇 시작! 루틴 알림 준비됐어요 🎉")
     scheduler = AsyncIOScheduler(timezone=KST)
     scheduler.add_job(send_news_briefing, CronTrigger(hour=9, minute=0, timezone=KST), args=[app.bot])
     scheduler.add_job(send_economy_briefing, CronTrigger(day_of_week="mon", hour=11, minute=0, timezone=KST), args=[app.bot])

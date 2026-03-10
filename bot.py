@@ -7,12 +7,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 import pytz
-import asyncio
+import httpx
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 DB_PATH = "/app/memory.db"
 OWNER_ID = 1023383754
 KST = pytz.timezone("Asia/Seoul")
@@ -56,19 +57,36 @@ def clear_history(user_id):
     conn.commit()
     conn.close()
 
+def tavily_search(query):
+    with httpx.Client() as client_http:
+        response = client_http.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": TAVILY_API_KEY,
+                "query": query,
+                "max_results": 5,
+                "search_depth": "basic"
+            },
+            timeout=10
+        )
+        results = response.json().get("results", [])
+        return "\n".join([f"- {r['title']}: {r['content'][:200]}" for r in results])
+
 async def send_news_briefing(bot):
+    news = tavily_search("today international news 2026")
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=512,
-        messages=[{"role": "user", "content": "오늘 주요 국제뉴스 3가지를 요약하고 향후 전망을 간단히 알려줘. 총 5줄 이내로."}]
+        messages=[{"role": "user", "content": f"아래 실시간 뉴스를 바탕으로 오늘의 주요 국제뉴스 3가지를 한국어로 요약하고 향후 전망을 간단히 알려줘. 5줄 이내로.\n\n{news}"}]
     )
     await bot.send_message(chat_id=OWNER_ID, text="🌍 오늘의 국제뉴스\n\n" + response.content[0].text)
 
 async def send_economy_briefing(bot):
+    news = tavily_search("global economy stock market news this week 2026")
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=512,
-        messages=[{"role": "user", "content": "이번 주 주요 경제 상황 요약과 주목할 주식 2-3개 추천해줘. 5줄 이내로."}]
+        messages=[{"role": "user", "content": f"아래 실시간 경제 뉴스를 바탕으로 이번 주 주요 경제 상황을 한국어로 요약하고 주목할 주식 2-3개 추천해줘. 5줄 이내로.\n\n{news}"}]
     )
     await bot.send_message(chat_id=OWNER_ID, text="📈 이번 주 경제 브리핑\n\n" + response.content[0].text)
 
@@ -110,7 +128,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"오류: {str(e)}")
 
 async def post_init(app):
-    await app.bot.send_message(chat_id=OWNER_ID, text="봇 시작! 루틴 알림 준비됐어요 🎉")
+    await app.bot.send_message(chat_id=OWNER_ID, text="봇 시작! 실시간 검색 기능이 추가됐어요 🎉")
     scheduler = AsyncIOScheduler(timezone=KST)
     scheduler.add_job(send_news_briefing, CronTrigger(hour=9, minute=0, timezone=KST), args=[app.bot])
     scheduler.add_job(send_economy_briefing, CronTrigger(day_of_week="mon", hour=11, minute=0, timezone=KST), args=[app.bot])
